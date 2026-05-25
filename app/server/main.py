@@ -17,7 +17,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 # CONFIG
 # =========================
 # Включатели модулей (можешь включать по одному)
-ENABLE_FACTCHECK = False
+ENABLE_FACTCHECK = True
 ENABLE_RSS = True  # <-- поставь True, когда захочешь использовать RSS
 
 FACTCHECK_API_KEY = os.getenv("FACTCHECK_API_KEY", "")
@@ -29,17 +29,17 @@ RSS_FEEDS = [
     # ("RBC", "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"),
 ]
 
-# Ограничения модели (не по символам, а по токенам BERT)
+
 MODEL_MAX_TOKENS = 256
 CHUNK_STRIDE_TOKENS = 64
 
-# Веса финального скоринга (truth_score 0..1)
+
 W_RUBERT = 0.40
 W_CLICKBAIT = 0.15
 W_FACTCHECK = 0.30
 W_NEWS = 0.15
 
-# Порог для verdict
+
 THR_TRUE = 0.65
 THR_FALSE = 0.35
 
@@ -250,13 +250,114 @@ def clickbait_fake_score(text: str) -> Tuple[float, str]:
 # FactCheck (optional) - placeholder
 # =========================
 def factcheck_search(claim: str) -> List[EvidenceItem]:
-    """
-    Здесь будет запрос к Google Fact Check Tools API, когда будет ключ.
-    Пока возвращаем пустой список.
-    """
     if not ENABLE_FACTCHECK or not FACTCHECK_API_KEY:
         return []
-    return []
+
+    try:
+        import requests
+    except Exception:
+        return []
+
+    url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+    params = {
+        "key": FACTCHECK_API_KEY,
+        "query": claim,
+        "languageCode": "ru",
+        "pageSize": 5,
+        "maxAgeDays": 3650,
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        return []
+
+    items: List[EvidenceItem] = []
+
+    for claim_obj in data.get("claims", []):
+        text = claim_obj.get("text", "")
+        claim_reviews = claim_obj.get("claimReview", []) or []
+
+        for review in claim_reviews:
+            publisher = (((review.get("publisher") or {}).get("name")) or "FactCheck")
+            title = review.get("title") or text or "Найден фактчек"
+            review_url = review.get("url")
+            textual_rating = review.get("textualRating")
+            language_code = review.get("languageCode")
+
+            note_parts = []
+            if text:
+                note_parts.append(f"claim: {text[:220]}")
+            if language_code:
+                note_parts.append(f"lang: {language_code}")
+
+            score = map_factcheck_rating_to_score(
+                textual_rating,
+                title=title,
+                note=" | ".join(note_parts) if note_parts else None
+            )
+
+            items.append(
+                EvidenceItem(
+                    source=publisher,
+                    title=title,
+                    url=review_url,
+                    rating=textual_rating,
+                    score=score,
+                    note=" | ".join(note_parts) if note_parts else "найдено в фактчекинге"
+                )
+            )
+
+    # убираем дубли по (source, title, url)
+    uniq = []
+    seen = set()
+    for it in items:
+        key = (it.source or "", it.title or "", it.url or "")
+        if key not in seen:
+            seen.add(key)
+            uniq.append(it)
+
+    return uniq[:8]
+
+
+def map_factcheck_rating_to_score(
+    rating: Optional[str],
+    title: Optional[str] = None,
+    note: Optional[str] = None
+) -> Optional[float]:
+    parts = [rating or "", title or "", note or ""]
+    text = " | ".join(parts).strip().lower()
+
+    if not text:
+        return None
+
+    false_patterns = [
+        "false", "mostly false", "pants on fire", "misleading",
+        "лож", "ложь", "неправ", "фейк", "опроверг", "манипуляц",
+        "поддел", "фальш", "не соответствует действительности",
+        "без доказательств", "спотворено", "неправда"
+    ]
+
+    true_patterns = [
+        "true", "mostly true",
+        "правд", "подтверж", "верно", "достоверно"
+    ]
+
+    mixed_patterns = [
+        "partly", "partially", "mixed", "mixture", "half true",
+        "частично", "сомнительно", "manipulation", "needs context"
+    ]
+
+    if any(p in text for p in false_patterns):
+        return 0.15
+    if any(p in text for p in true_patterns):
+        return 0.85
+    if any(p in text for p in mixed_patterns):
+        return 0.50
+
+    return 0.50
 
 
 def extract_claims(text: str, max_claims: int = 6) -> List[str]:
@@ -379,12 +480,19 @@ def clamp01(x: float) -> float:
 def factcheck_score(items: List[EvidenceItem]) -> Tuple[float, str]:
     if not items:
         return 0.5, "нет данных"
-    r = " ".join([(it.rating or "").lower() for it in items])
-    if "false" in r or "лож" in r or "опровер" in r:
-        return 0.1, "найдено опровержение в фактчекинге"
-    if "true" in r or "правд" in r or "подтверж" in r:
-        return 0.9, "найдено подтверждение в фактчекинге"
-    return 0.5, "фактчек найден, но вердикт неочевиден"
+
+    scored = [it.score for it in items if it.score is not None]
+    ratings = " | ".join([(it.rating or "") for it in items if it.rating])
+
+    if scored:
+        avg = sum(scored) / len(scored)
+        if avg <= 0.30:
+            return avg, f"фактчекинг склоняется к ложности ({ratings[:180]})"
+        if avg >= 0.70:
+            return avg, f"фактчекинг склоняется к правдивости ({ratings[:180]})"
+        return avg, f"фактчекинг дал смешанный результат ({ratings[:180]})"
+
+    return 0.5, "фактчек найден, но текстовая оценка не распознана"
 
 
 def news_score(items: List[EvidenceItem]) -> Tuple[float, str]:

@@ -1,1 +1,25 @@
-/ml/ 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Android / Gradle
+.gradle/
+build/
+app/build/
+
+# Android Studio
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# Local config
+local.properties
+
+# ML models
+ml/models/
+ml/runs/
+# Environment
+.env
