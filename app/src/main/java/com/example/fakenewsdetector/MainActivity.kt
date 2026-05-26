@@ -1,5 +1,7 @@
 package com.example.fakenewsdetector
 
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -92,6 +94,7 @@ fun FakeNewsScreen() {
         }
 
         Button(
+            enabled = !isLoading,
             onClick = {
 
                 scope.launch {
@@ -228,7 +231,7 @@ fun FakeNewsScreen() {
                                         ) {
 
                                             Text(
-                                                text = it.name,
+                                                text = signalDisplayName(it.name),
                                                 fontWeight = FontWeight.SemiBold
                                             )
 
@@ -255,7 +258,9 @@ fun FakeNewsScreen() {
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                resp.evidence.forEach {
+                                val uriHandler = LocalUriHandler.current
+
+                                resp.evidence.forEach { item ->
 
                                     Card {
 
@@ -264,20 +269,40 @@ fun FakeNewsScreen() {
                                         ) {
 
                                             Text(
-                                                text = it.source,
+                                                text = item.source,
                                                 fontWeight = FontWeight.SemiBold
                                             )
 
-                                            it.title?.let { title ->
+                                            item.title?.let { title ->
+                                                Spacer(modifier = Modifier.height(4.dp))
                                                 Text(title)
                                             }
 
-                                            it.note?.let { note ->
-                                                Text(note)
+                                            item.score?.let { score ->
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text("Сходство: ${"%.2f".format(score)}")
                                             }
 
-                                            it.url?.let { url ->
-                                                Text(url)
+                                            item.note?.let { note ->
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = note,
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+
+                                            item.url?.let { url ->
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                TextButton(
+                                                    onClick = {
+                                                        uriHandler.openUri(url)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "Открыть источник",
+                                                        textDecoration = TextDecoration.Underline
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -321,5 +346,17 @@ fun SwitchRow(
             checked = checked,
             onCheckedChange = onCheckedChange
         )
+    }
+}
+
+
+fun signalDisplayName(name: String): String {
+    return when (name) {
+        "style_model" -> "ML-модель"
+        "clickbait_heuristics" -> "Кликбейт-признаки"
+        "factcheck" -> "Фактчекинг"
+        "news_sources" -> "Новостные источники"
+        "llm_analysis" -> "LLM-анализ"
+        else -> name
     }
 }
