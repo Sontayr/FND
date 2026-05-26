@@ -33,8 +33,9 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
 RSS_FEEDS = [
     ("Lenta", "https://lenta.ru/rss/news"),
     ("Kommersant", "https://www.kommersant.ru/RSS/news.xml"),
-    # Можно добавить позже:
-    # ("RBC", "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"),
+    ("Kommersant Main", "https://www.kommersant.ru/rss/main.xml"),
+    ("TASS", "https://tass.ru/feed"),
+    ("RBC", "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"),
 ]
 
 
@@ -409,24 +410,74 @@ def extract_claims(text: str, max_claims: int = 6) -> List[str]:
 # =========================
 # RSS verification (optional, real implementation)
 # =========================
+RUS_STOPWORDS = {
+    "этот", "эта", "это", "эти", "того", "тому", "также", "который", "которая",
+    "которые", "которое", "свой", "свои", "свою", "своего", "были", "была",
+    "было", "будет", "после", "перед", "из-за", "изза", "около", "среди",
+    "новости", "сообщил", "сообщила", "сообщили", "заявил", "заявила",
+    "заявили", "рассказал", "рассказала", "данные", "стало", "известно",
+    "россии", "россия", "рф", "москва", "сегодня", "вчера"
+}
+
+
 def normalize_tokens(s: str) -> List[str]:
     s = s.lower()
-    s = re.sub(r"[^a-zа-я0-9\s]", " ", s, flags=re.IGNORECASE)
+    s = s.replace("ё", "е")
+    s = re.sub(r"[^a-zа-я0-9\s-]", " ", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip()
-    toks = [t for t in s.split(" ") if len(t) >= 4]
+
+    toks = []
+    for t in s.split(" "):
+        t = t.strip("-")
+        if len(t) < 4:
+            continue
+        if t in RUS_STOPWORDS:
+            continue
+        toks.append(t)
+
     return toks
 
 
 def jaccard(a: List[str], b: List[str]) -> float:
     sa, sb = set(a), set(b)
+
     if not sa or not sb:
         return 0.0
+
     return len(sa & sb) / len(sa | sb)
 
 
-def fetch_rss_titles(url: str, limit: int = 25) -> List[Tuple[str, str]]:
+def weighted_token_score(query: str, document: str) -> float:
     """
-    Возвращает список (title, link). Требует requests.
+    Оценка похожести текста новости и материала из RSS.
+    Используем простую интерпретируемую метрику:
+    - Jaccard по ключевым словам;
+    - доля ключевых слов запроса, найденных в документе.
+    """
+    q = normalize_tokens(query)
+    d = normalize_tokens(document)
+
+    if not q or not d:
+        return 0.0
+
+    sq, sd = set(q), set(d)
+
+    j = len(sq & sd) / len(sq | sd)
+    recall = len(sq & sd) / len(sq)
+
+    score = 0.45 * j + 0.55 * recall
+
+    return float(max(0.0, min(1.0, score)))
+
+
+def fetch_rss_items(url: str, limit: int = 40) -> List[Dict[str, str]]:
+    """
+    Возвращает список RSS-элементов:
+    {
+        "title": "...",
+        "link": "...",
+        "description": "..."
+    }
     """
     try:
         import requests
@@ -435,62 +486,176 @@ def fetch_rss_titles(url: str, limit: int = 25) -> List[Tuple[str, str]]:
         return []
 
     try:
-        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(
+            url,
+            timeout=8,
+            headers={
+                "User-Agent": "Mozilla/5.0 FakeNewsDetector/1.0"
+            }
+        )
         r.raise_for_status()
-        xml = r.text
+
+        xml = r.text.strip()
+
+        if not xml:
+            return []
+
         root = ET.fromstring(xml)
 
         items = []
-        # RSS: обычно channel/item
+
+        # Обычный RSS: channel/item
         for item in root.findall(".//item"):
             title_el = item.find("title")
             link_el = item.find("link")
+            desc_el = item.find("description")
+
             title = title_el.text.strip() if title_el is not None and title_el.text else ""
             link = link_el.text.strip() if link_el is not None and link_el.text else ""
+            desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+
+            # чистим HTML из description
+            desc = re.sub(r"<[^>]+>", " ", desc)
+            desc = re.sub(r"\s+", " ", desc).strip()
+
             if title:
-                items.append((title, link))
+                items.append(
+                    {
+                        "title": title,
+                        "link": link,
+                        "description": desc
+                    }
+                )
+
             if len(items) >= limit:
                 break
+
+        # Atom fallback: entry/title/link/summary
+        if not items:
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+
+            for entry in root.findall(".//atom:entry", ns):
+                title_el = entry.find("atom:title", ns)
+                summary_el = entry.find("atom:summary", ns)
+                link_el = entry.find("atom:link", ns)
+
+                title = title_el.text.strip() if title_el is not None and title_el.text else ""
+                desc = summary_el.text.strip() if summary_el is not None and summary_el.text else ""
+                link = link_el.attrib.get("href", "") if link_el is not None else ""
+
+                desc = re.sub(r"<[^>]+>", " ", desc)
+                desc = re.sub(r"\s+", " ", desc).strip()
+
+                if title:
+                    items.append(
+                        {
+                            "title": title,
+                            "link": link,
+                            "description": desc
+                        }
+                    )
+
+                if len(items) >= limit:
+                    break
+
         return items
+
     except Exception:
         return []
 
 
-def rss_verify(text: str) -> List[EvidenceItem]:
+def build_news_queries(text: str, claims: Optional[List[str]] = None, max_queries: int = 4) -> List[str]:
+    """
+    Формирует короткие запросы для проверки по новостным источникам.
+    Лучше проверять не весь текст, а отдельные утверждения.
+    """
+    queries = []
+
+    if claims:
+        for c in claims:
+            c = c.strip()
+            if 30 <= len(c) <= 260:
+                queries.append(c)
+
+    sents = split_sentences(text)
+
+    for s in sents:
+        s = s.strip()
+        if 30 <= len(s) <= 260:
+            queries.append(s)
+
+    if not queries and text.strip():
+        queries.append(text[:220])
+
+    # убираем дубли
+    uniq = []
+    seen = set()
+
+    for q in queries:
+        key = q.lower()
+        if key not in seen:
+            seen.add(key)
+            uniq.append(q)
+
+    return uniq[:max_queries]
+
+
+def rss_verify(text: str, claims: Optional[List[str]] = None) -> List[EvidenceItem]:
     if not ENABLE_RSS:
         return []
 
-    # Берём краткий "запрос": первые 1-2 предложения или первые 140 символов
-    sents = split_sentences(text)
-    query = sents[0] if sents else text[:140]
-    q_toks = normalize_tokens(query)
+    queries = build_news_queries(text, claims=claims, max_queries=4)
+
+    if not queries:
+        return []
 
     evidence: List[EvidenceItem] = []
-    if not q_toks:
-        return evidence
 
     for source_name, feed_url in RSS_FEEDS:
-        titles = fetch_rss_titles(feed_url, limit=30)
-        best = None
-        best_sim = 0.0
-        for title, link in titles:
-            sim = jaccard(q_toks, normalize_tokens(title))
-            if sim > best_sim:
-                best_sim = sim
-                best = (title, link)
+        items = fetch_rss_items(feed_url, limit=50)
 
-        # порог сходства (эмпирически)
-        if best and best_sim >= 0.22:
-            title, link = best
-            evidence.append(EvidenceItem(
-                source=source_name,
-                title=title,
-                url=link,
-                score=float(best_sim),
-                note="похоже по ключевым словам (RSS)"
-            ))
+        best_item = None
+        best_score = 0.0
+        best_query = ""
 
-    return evidence
+        for item in items:
+            doc = f"{item.get('title', '')}. {item.get('description', '')}"
+
+            for q in queries:
+                score = weighted_token_score(q, doc)
+
+                if score > best_score:
+                    best_score = score
+                    best_item = item
+                    best_query = q
+
+        # Порог специально не слишком высокий:
+        # RSS содержит короткие заголовки, поэтому точного совпадения часто не будет.
+        if best_item and best_score >= 0.18:
+            evidence.append(
+                EvidenceItem(
+                    source=source_name,
+                    title=best_item.get("title"),
+                    url=best_item.get("link"),
+                    score=float(best_score),
+                    note=f"найдено сходство с новостным источником; запрос: {best_query[:120]}"
+                )
+            )
+
+    # сортируем по сходству
+    evidence.sort(key=lambda x: x.score or 0.0, reverse=True)
+
+    # убираем дубли по ссылке/заголовку
+    uniq = []
+    seen = set()
+
+    for it in evidence:
+        key = (it.url or "", it.title or "")
+        if key not in seen:
+            seen.add(key)
+            uniq.append(it)
+
+    return uniq[:5]
 
 
 def extract_json_object(raw: str) -> Optional[dict]:
@@ -965,9 +1130,27 @@ def factcheck_score(items: List[EvidenceItem]) -> Tuple[float, str]:
 def news_score(items: List[EvidenceItem]) -> Tuple[float, str]:
     if not items:
         return 0.5, "нет данных"
-    if len(items) >= 2:
-        return 0.75, "похожие материалы найдены у нескольких источников"
-    return 0.65, "похожий материал найден у одного источника"
+
+    scores = [it.score for it in items if it.score is not None]
+
+    if not scores:
+        if len(items) >= 2:
+            return 0.70, "похожие материалы найдены у нескольких источников"
+        return 0.62, "похожий материал найден у одного источника"
+
+    best = max(scores)
+    avg = sum(scores) / len(scores)
+
+    if len(items) >= 2 and best >= 0.25:
+        return 0.78, "похожие материалы найдены у нескольких новостных источников"
+
+    if best >= 0.30:
+        return 0.72, "найдено сильное сходство с материалом новостного источника"
+
+    if best >= 0.18:
+        return 0.63, "найдено частичное сходство с новостным источником"
+
+    return max(0.5, min(0.6, avg)), "найдены слабые совпадения в новостных источниках"
 
 
 def fuse_scores(
@@ -1093,7 +1276,7 @@ def predict(req: PredictRequest):
     news_items: List[EvidenceItem] = []
 
     if req.use_news and ENABLE_RSS:
-        news_items = rss_verify(text)
+        news_items = rss_verify(text, claims=claims)
 
     # =========================
     # 5) LLM пока отключена
