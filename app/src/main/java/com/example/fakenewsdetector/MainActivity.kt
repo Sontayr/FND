@@ -3,39 +3,13 @@ package com.example.fakenewsdetector
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -44,14 +18,10 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    FakeNewsScreen()
-                }
+                FakeNewsScreen()
             }
         }
     }
@@ -59,514 +29,297 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun FakeNewsScreen() {
+
     var text by remember { mutableStateOf(TextFieldValue("")) }
+
+    var useMl by remember { mutableStateOf(true) }
+    var useFactcheck by remember { mutableStateOf(true) }
+    var useNews by remember { mutableStateOf(true) }
+    var useLlm by remember { mutableStateOf(false) }
+
     var response by remember { mutableStateOf<PredictResponse?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
+    var showDetails by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+
         Text(
-            text = "Проверка новости",
+            text = "Fake News Detector",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
 
         Text(
-            text = "Вставьте текст новости, и приложение оценит ее достоверность по нескольким сигналам.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = "Проверка достоверности новостей с использованием ИИ",
+            style = MaterialTheme.typography.bodyMedium
         )
 
-        Card(
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("Введите текст новости") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Текст новости") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 8,
-                    maxLines = 14
+            minLines = 8
+        )
+
+        Card {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+
+                Text(
+                    text = "Методы проверки",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                SwitchRow("ML-модель", useMl) { useMl = it }
+                SwitchRow("Google FactCheck", useFactcheck) { useFactcheck = it }
+                SwitchRow("Новостные источники", useNews) { useNews = it }
+                SwitchRow("LLM-анализ", useLlm) { useLlm = it }
+            }
+        }
 
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val input = text.text.trim()
-                                if (input.isEmpty()) {
-                                    errorMessage = "Введите текст новости"
-                                    response = null
-                                    return@launch
-                                }
+        Button(
+            onClick = {
 
-                                isLoading = true
-                                errorMessage = null
-                                response = null
+                scope.launch {
 
-                                try {
-                                    val resp = ApiClient.api.predict(PredictRequest(input))
-                                    response = resp
-                                } catch (e: Exception) {
-                                    errorMessage = "Ошибка запроса: ${e.message}"
-                                } finally {
-                                    isLoading = false
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Проверить")
-                    }
+                    isLoading = true
+                    errorMessage = null
+                    response = null
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    try {
 
-                    TextButton(
-                        onClick = {
-                            text = TextFieldValue("")
-                            response = null
-                            errorMessage = null
-                        },
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    ) {
-                        Text("Очистить")
+                        response = ApiClient.api.predict(
+                            PredictRequest(
+                                text = text.text,
+                                use_ml = useMl,
+                                use_factcheck = useFactcheck,
+                                use_news = useNews,
+                                use_llm = useLlm
+                            )
+                        )
+
+                    } catch (e: Exception) {
+                        errorMessage = e.message
+                    } finally {
+                        isLoading = false
                     }
                 }
-            }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Проверить")
         }
 
         if (isLoading) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Идет анализ",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Модель и источники проверяют текст...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        errorMessage?.let { msg ->
-            StatusMessageCard(
-                title = "Ошибка",
-                text = msg,
-                backgroundColor = Color(0xFFFFF0F0)
+        errorMessage?.let {
+            Text(
+                text = "Ошибка: $it",
+                color = MaterialTheme.colorScheme.error
             )
         }
 
         response?.let { resp ->
-            VerdictCard(resp)
-            SuspiciousFragmentsCard(resp)
-            SignalsCard(resp)
-            EvidenceCard(resp)
-        }
-    }
-}
 
-@Composable
-fun VerdictCard(resp: PredictResponse) {
-    val verdictText = when (resp.verdict) {
-        "likely_true" -> "Скорее правда"
-        "likely_false" -> "Скорее фейк"
-        else -> "Недостаточно данных"
-    }
+            val verdictText = when (resp.verdict) {
+                "likely_true" -> "Скорее правда"
+                "likely_false" -> "Скорее фейк"
+                else -> "Недостаточно данных"
+            }
 
-    val verdictDescription = when (resp.verdict) {
-        "likely_true" -> "Текст выглядит относительно достоверным по совокупности проверок."
-        "likely_false" -> "Текст содержит признаки недостоверной или сомнительной информации."
-        else -> "Система не нашла достаточно оснований для уверенного вывода."
-    }
-
-    val badgeColor = when (resp.verdict) {
-        "likely_true" -> Color(0xFFE7F6EC)
-        "likely_false" -> Color(0xFFFFECEC)
-        else -> Color(0xFFF3F0FF)
-    }
-
-    val badgeTextColor = when (resp.verdict) {
-        "likely_true" -> Color(0xFF1F7A3D)
-        "likely_false" -> Color(0xFFB3261E)
-        else -> Color(0xFF5B4BA8)
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = "Результат проверки",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Box(
-                modifier = Modifier
-                    .background(badgeColor, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = verdictText,
-                    color = badgeTextColor,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = verdictDescription,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            ScoreBar(
-                label = "Вероятность правдивости",
-                value = resp.truth_score
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            InfoRow("Итоговая оценка", formatPercent(resp.truth_score))
-            InfoRow("Технический score", String.format("%.2f", resp.score))
-            InfoRow(
-                "Метка модели",
-                when (resp.label) {
-                    "real" -> "Правда"
-                    "fake" -> "Фейк"
-                    else -> "Не определено"
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun SuspiciousFragmentsCard(resp: PredictResponse) {
-    if (resp.suspicious_fragments.isEmpty()) return
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = "Подозрительные фрагменты",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            resp.suspicious_fragments.forEachIndexed { index, fragment ->
-                FragmentItem(index + 1, fragment)
-                if (index != resp.suspicious_fragments.lastIndex) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SignalsCard(resp: PredictResponse) {
-    if (resp.signals.isEmpty()) return
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = "Сигналы анализа",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            resp.signals.forEachIndexed { index, signal ->
-                val title = when (signal.name) {
-                    "style_model" -> "Модель текста"
-                    "clickbait_heuristics" -> "Кликбейт-признаки"
-                    "factcheck" -> "Фактчекинг"
-                    "news_sources" -> "Новостные источники"
-                    else -> signal.name
-                }
-
-                SignalItemCard(
-                    title = title,
-                    value = signal.value,
-                    weight = signal.weight,
-                    detail = signal.detail
-                )
-
-                if (index != resp.signals.lastIndex) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EvidenceCard(resp: PredictResponse) {
-    if (resp.evidence.isEmpty()) return
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = "Найденные источники",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            resp.evidence.forEachIndexed { index, item ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                    ),
-                    shape = RoundedCornerShape(16.dp)
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+
+                    Text(
+                        text = verdictText,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    LinearProgressIndicator(
+                        progress = { resp.truth_score.toFloat() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        text = "Правдивость: ${(resp.truth_score * 100).toInt()}%"
+                    )
+
+                    if (resp.summary_points.isNotEmpty()) {
+
                         Text(
-                            text = item.source,
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "Краткий анализ:",
                             fontWeight = FontWeight.SemiBold
                         )
 
-                        item.title?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(text = it, style = MaterialTheme.typography.bodyMedium)
+                        resp.summary_points.forEach {
+                            Text("• $it")
                         }
+                    }
 
-                        item.note?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    resp.llm_explanation?.let {
+
+                        HorizontalDivider()
+
+                        Text(
+                            text = "LLM-анализ",
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Text(it)
+                    }
+
+                    HorizontalDivider()
+
+                    TextButton(
+                        onClick = {
+                            showDetails = !showDetails
                         }
+                    ) {
+                        Text(
+                            if (showDetails)
+                                "Скрыть технические детали"
+                            else
+                                "Показать технические детали"
+                        )
+                    }
 
-                        item.rating?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(text = "Оценка источника: $it", style = MaterialTheme.typography.bodySmall)
-                        }
+                    AnimatedVisibility(showDetails) {
 
-                        item.score?.let {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Сходство: ${String.format("%.2f", it)}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
 
-                        item.url?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            if (resp.signals.isNotEmpty()) {
+
+                                Text(
+                                    text = "Сигналы анализа",
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                resp.signals.forEach {
+
+                                    Card {
+
+                                        Column(
+                                            modifier = Modifier.padding(10.dp)
+                                        ) {
+
+                                            Text(
+                                                text = it.name,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+
+                                            Text(
+                                                text = "Value: ${"%.2f".format(it.value)}"
+                                            )
+
+                                            Text(
+                                                text = "Weight: ${"%.2f".format(it.weight)}"
+                                            )
+
+                                            it.detail?.let { detail ->
+                                                Text(detail)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (resp.evidence.isNotEmpty()) {
+
+                                Text(
+                                    text = "Источники",
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                resp.evidence.forEach {
+
+                                    Card {
+
+                                        Column(
+                                            modifier = Modifier.padding(10.dp)
+                                        ) {
+
+                                            Text(
+                                                text = it.source,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+
+                                            it.title?.let { title ->
+                                                Text(title)
+                                            }
+
+                                            it.note?.let { note ->
+                                                Text(note)
+                                            }
+
+                                            it.url?.let { url ->
+                                                Text(url)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (resp.suspicious_fragments.isNotEmpty()) {
+
+                                Text(
+                                    text = "Подозрительные фрагменты",
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                resp.suspicious_fragments.forEach {
+                                    Text("• $it")
+                                }
+                            }
                         }
                     }
                 }
-
-                if (index != resp.evidence.lastIndex) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
             }
         }
     }
 }
 
 @Composable
-fun SignalItemCard(
-    title: String,
-    value: Double,
-    weight: Double,
-    detail: String?
+fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
 
-            Spacer(modifier = Modifier.height(8.dp))
-            ScoreBar(label = "Вклад сигнала", value = value)
-
-            Spacer(modifier = Modifier.height(8.dp))
-            InfoRow("Вес", String.format("%.2f", weight))
-
-            detail?.takeIf { it.isNotBlank() }?.let {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FragmentItem(index: Int, text: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(modifier = Modifier.padding(14.dp)) {
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = index.toString(),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-fun ScoreBar(label: String, value: Double) {
-    val clamped = value.coerceIn(0.0, 1.0).toFloat()
-
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(formatPercent(value), fontWeight = FontWeight.SemiBold)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        androidx.compose.material3.LinearProgressIndicator(
-            progress = { clamped },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp),
-        )
-    }
-}
-
-@Composable
-fun InfoRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold
+
+        Text(label)
+
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
         )
     }
-}
-
-@Composable
-fun StatusMessageCard(
-    title: String,
-    text: String,
-    backgroundColor: Color
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = text, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-fun formatPercent(value: Double): String {
-    return String.format("%.1f%%", value.coerceIn(0.0, 1.0) * 100)
 }
