@@ -1,5 +1,10 @@
 package com.example.fakenewsdetector
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -229,53 +234,91 @@ fun HeaderBlock(
     onLogoutClick: () -> Unit,
     onHistoryClick: () -> Unit
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Text(
-            text = "Fake News Detector",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
-        Text(
-            text = "Проверка достоверности новостей с использованием ИИ",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        if (userEmail == null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onLoginClick) {
-                    Text("Войти")
-                }
-
-                TextButton(onClick = onRegisterClick) {
-                    Text("Создать аккаунт")
-                }
-            }
-        } else {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Вы вошли как: $userEmail",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+        Column(
+            modifier = Modifier
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFEAF2FF),
+                            Color(0xFFFFFFFF)
+                        )
+                    )
                 )
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Fake News Detector",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF163B73)
+            )
 
+            Text(
+                text = "Интеллектуальная проверка достоверности новостей по нескольким источникам: ML-модель, фактчекинг, СМИ и LLM-анализ.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF42526E)
+            )
+
+            if (userEmail == null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onHistoryClick) {
-                        Text("История")
+                    TextButton(onClick = onLoginClick) {
+                        Text("Войти")
                     }
 
-                    TextButton(onClick = onLogoutClick) {
-                        Text("Выйти")
+                    Button(
+                        onClick = onRegisterClick,
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Создать аккаунт")
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF4F8FF)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Профиль",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF163B73)
+                        )
+
+                        Text(
+                            text = userEmail,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF42526E)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onHistoryClick) {
+                                Text("История")
+                            }
+
+                            TextButton(onClick = onLogoutClick) {
+                                Text("Выйти")
+                            }
+                        }
                     }
                 }
             }
@@ -341,15 +384,18 @@ fun HistoryCard(
     onClose: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "История проверок",
@@ -363,29 +409,42 @@ fun HistoryCard(
             }
 
             if (items.isEmpty()) {
-                Text("История пока пуста")
+                Text(
+                    text = "История пока пуста",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
                 items.forEach { item ->
-                    Card {
+                    val color = verdictColor(item.verdict)
+                    val dateText = formatHistoryDate(item.created_at)
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF8F9FC)
+                        )
+                    ) {
                         Column(
-                            modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = verdictDisplayName(item.verdict),
-                                fontWeight = FontWeight.Bold
+                                color = color,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
                             )
 
-                            Text("Правдивость: ${(item.truth_score * 100).toInt()}%")
+                            Text(
+                                text = dateText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
                             Text(
                                 text = item.text_preview,
                                 style = MaterialTheme.typography.bodyMedium
-                            )
-
-                            Text(
-                                text = item.created_at,
-                                style = MaterialTheme.typography.bodySmall
                             )
                         }
                     }
@@ -402,38 +461,63 @@ fun ResultCard(
     onToggleDetails: () -> Unit
 ) {
     val verdictText = verdictDisplayName(resp.verdict)
+    val color = verdictColor(resp.verdict)
+    val bgColor = verdictBackgroundColor(resp.verdict)
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = bgColor)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = verdictText,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = color
+                    )
 
-            Text(
-                text = verdictText,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+                    LinearProgressIndicator(
+                        progress = { resp.truth_score.toFloat().coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(10.dp),
+                        color = color
+                    )
 
-            LinearProgressIndicator(
-                progress = { resp.truth_score.toFloat() },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Text(
-                text = "Правдивость: ${(resp.truth_score * 100).toInt()}%"
-            )
+                    Text(
+                        text = "Оценка правдивости: ${(resp.truth_score * 100).toInt()}%",
+                        fontWeight = FontWeight.SemiBold,
+                        color = color
+                    )
+                }
+            }
 
             if (resp.summary_points.isNotEmpty()) {
                 Text(
-                    text = "Краткий анализ:",
-                    fontWeight = FontWeight.SemiBold
+                    text = "Краткий анализ",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
                 )
 
                 resp.summary_points.forEach {
-                    Text("• $it")
+                    Text(
+                        text = "• $it",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
 
@@ -442,10 +526,14 @@ fun ResultCard(
 
                 Text(
                     text = "LLM-анализ",
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
                 )
 
-                Text(it)
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
 
             HorizontalDivider()
@@ -471,30 +559,43 @@ fun ResultCard(
 @Composable
 fun TechnicalDetails(resp: PredictResponse) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-
         if (resp.signals.isNotEmpty()) {
             Text(
-                text = "Сигналы анализа",
-                fontWeight = FontWeight.Bold
+                text = "Подробности проверки",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
             )
 
             resp.signals.forEach { item ->
-                Card {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF8F9FC)
+                    )
+                ) {
                     Column(
-                        modifier = Modifier.padding(10.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = signalDisplayName(item.name),
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
 
-                        Text("Value: ${"%.2f".format(item.value)}")
-                        Text("Weight: ${"%.2f".format(item.weight)}")
+                        Text(
+                            text = signalHumanText(item),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
 
                         item.detail?.let { detail ->
-                            Text(detail)
+                            Text(
+                                text = detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -503,43 +604,51 @@ fun TechnicalDetails(resp: PredictResponse) {
 
         if (resp.evidence.isNotEmpty()) {
             Text(
-                text = "Источники",
-                fontWeight = FontWeight.Bold
+                text = "Найденные источники",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
             )
 
             val uriHandler = LocalUriHandler.current
 
             resp.evidence.forEach { item ->
-                Card {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF8F9FC)
+                    )
+                ) {
                     Column(
-                        modifier = Modifier.padding(10.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = item.source,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
 
                         item.title?.let { title ->
-                            Spacer(modifier = Modifier.height(4.dp))
                             Text(title)
                         }
 
                         item.score?.let { score ->
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Сходство: ${"%.2f".format(score)}")
+                            Text(
+                                text = sourceMatchText(score),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         item.note?.let { note ->
-                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = note,
-                                style = MaterialTheme.typography.bodySmall
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
                         item.url?.let { url ->
-                            Spacer(modifier = Modifier.height(4.dp))
-
                             TextButton(
                                 onClick = {
                                     uriHandler.openUri(url)
@@ -559,11 +668,24 @@ fun TechnicalDetails(resp: PredictResponse) {
         if (resp.suspicious_fragments.isNotEmpty()) {
             Text(
                 text = "Подозрительные фрагменты",
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
             )
 
             resp.suspicious_fragments.forEach {
-                Text("• $it")
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFF8E6)
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
     }
@@ -604,5 +726,83 @@ fun verdictDisplayName(verdict: String): String {
         "likely_true" -> "Скорее правда"
         "likely_false" -> "Скорее фейк"
         else -> "Недостаточно данных"
+    }
+}
+
+
+fun verdictColor(verdict: String): Color {
+    return when (verdict) {
+        "likely_true" -> Color(0xFF1B7F3A)
+        "likely_false" -> Color(0xFFC62828)
+        else -> Color(0xFF5E35B1)
+    }
+}
+
+fun verdictBackgroundColor(verdict: String): Color {
+    return when (verdict) {
+        "likely_true" -> Color(0xFFE8F5E9)
+        "likely_false" -> Color(0xFFFFEBEE)
+        else -> Color(0xFFF3E5F5)
+    }
+}
+
+fun signalHumanText(signal: SignalItem): String {
+    return when {
+        signal.name == "style_model" && signal.value >= 0.65 ->
+            "Стиль текста выглядит достаточно надежным по оценке ML-модели."
+
+        signal.name == "style_model" && signal.value <= 0.35 ->
+            "ML-модель обнаружила признаки недостоверного или подозрительного стиля."
+
+        signal.name == "clickbait_heuristics" && signal.value >= 0.65 ->
+            "Выраженных кликбейт-признаков не обнаружено."
+
+        signal.name == "clickbait_heuristics" && signal.value <= 0.35 ->
+            "Обнаружены признаки эмоционального или кликбейтного оформления."
+
+        signal.name == "factcheck" && signal.value >= 0.65 ->
+            "Фактчекинговые источники скорее подтверждают информацию."
+
+        signal.name == "factcheck" && signal.value <= 0.35 ->
+            "Фактчекинговые источники указывают на возможное опровержение."
+
+        signal.name == "factcheck" ->
+            "Фактчекинг не дал уверенного результата."
+
+        signal.name == "news_sources" && signal.value >= 0.65 ->
+            "Похожие материалы найдены в новостных источниках."
+
+        signal.name == "news_sources" ->
+            "Новостные источники не дали уверенного подтверждения."
+
+        signal.name == "llm_analysis" && signal.value >= 0.65 ->
+            "LLM-анализ не выявил явных противоречий с общеизвестными фактами."
+
+        signal.name == "llm_analysis" && signal.value <= 0.35 ->
+            "LLM-анализ обнаружил возможные фактические или логические противоречия."
+
+        signal.name == "llm_analysis" ->
+            "LLM-анализ не дал уверенного вывода."
+
+        else ->
+            "Сигнал обработан системой, но не дал однозначного вывода."
+    }
+}
+
+fun sourceMatchText(score: Double): String {
+    return when {
+        score >= 0.35 -> "Найдено сильное сходство с источником"
+        score >= 0.20 -> "Найдено частичное сходство с источником"
+        else -> "Найдено слабое сходство с источником"
+    }
+}
+
+fun formatHistoryDate(raw: String): String {
+    return try {
+        raw
+            .replace("T", " ")
+            .substringBefore(".")
+    } catch (e: Exception) {
+        raw
     }
 }
