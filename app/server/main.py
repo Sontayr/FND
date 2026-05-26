@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
+
+from passlib.context import CryptContext
+from jose import jwt, JWTError
 import os
 import re
 import time
@@ -30,6 +40,12 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").lower()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
 
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:1@localhost:5432/fakenewsdb")
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev_secret_key_change_later")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = 60 * 24 * 7
+
 RSS_FEEDS = [
     ("Lenta", "https://lenta.ru/rss/news"),
     ("Kommersant", "https://www.kommersant.ru/RSS/news.xml"),
@@ -57,6 +73,79 @@ THR_FALSE = 0.35
 # =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.normpath(os.path.join(BASE_DIR, "..", "..", "ml", "models", "rubert-base-fakenews"))
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer(auto_error=False)
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+
+
+class HistoryItemResponse(BaseModel):
+    id: int
+    text_preview: str
+    verdict: str
+    truth_score: float
+    enabled_modules: Optional[str] = None
+    created_at: str
+
+
+class UserDB(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    checks = relationship("CheckHistoryDB", back_populates="user")
+
+
+class CheckHistoryDB(Base):
+    __tablename__ = "checks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    text = Column(Text, nullable=False)
+    verdict = Column(String(50), nullable=False)
+    truth_score = Column(Float, nullable=False)
+
+    enabled_modules = Column(Text, nullable=True)
+    response_json = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("UserDB", back_populates="checks")
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="FakeNews Detector API", version="1.1")
 
@@ -1220,11 +1309,162 @@ def fuse_scores(
     return truth, verdict, signals
 
 
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return pwd_context.verify(password, password_hash)
+
+
+def create_access_token(user_id: int, email: str) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES)
+
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire,
+    }
+
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
+) -> Optional[UserDB]:
+
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except Exception:
+        return None
+
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    return user
+
+
+def get_current_user_required(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
+) -> UserDB:
+
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = credentials.credentials
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 # =========================
 # Endpoint
 # =========================
+@app.post("/auth/register", response_model=AuthResponse)
+def register(req: AuthRequest, db: Session = Depends(get_db)):
+    email = req.email.strip().lower()
+    password = req.password.strip()
+
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Некорректный email")
+
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="Пароль должен быть не короче 4 символов")
+
+    existing = db.query(UserDB).filter(UserDB.email == email).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Пользователь с таким email уже существует")
+
+    user = UserDB(
+        email=email,
+        password_hash=hash_password(password)
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id, user.email)
+
+    return AuthResponse(
+        access_token=token,
+        email=user.email
+    )
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+def login(req: AuthRequest, db: Session = Depends(get_db)):
+    email = req.email.strip().lower()
+    password = req.password.strip()
+
+    user = db.query(UserDB).filter(UserDB.email == email).first()
+
+    if not user or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+
+    token = create_access_token(user.id, user.email)
+
+    return AuthResponse(
+        access_token=token,
+        email=user.email
+    )
+
+
+@app.get("/auth/me", response_model=UserResponse)
+def me(user: UserDB = Depends(get_current_user_required)):
+    return UserResponse(
+        id=user.id,
+        email=user.email
+    )
+
+
+@app.get("/history", response_model=List[HistoryItemResponse])
+def get_history(
+    user: UserDB = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    items = (
+        db.query(CheckHistoryDB)
+        .filter(CheckHistoryDB.user_id == user.id)
+        .order_by(CheckHistoryDB.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return [
+        HistoryItemResponse(
+            id=item.id,
+            text_preview=item.text[:160],
+            verdict=item.verdict,
+            truth_score=item.truth_score,
+            enabled_modules=item.enabled_modules,
+            created_at=item.created_at.isoformat()
+        )
+        for item in items
+    ]
+
+
 @app.post("/predict", response_model=PredictResponse)
-def predict(req: PredictRequest):
+def predict(
+    req: PredictRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional),
+):
     t0 = time.time()
     text = (req.text or "").strip()
 
@@ -1388,7 +1628,7 @@ def predict(req: PredictRequest):
         "openrouter_model": OPENROUTER_MODEL if req.use_llm and LLM_PROVIDER == "openrouter" else None,
     }
 
-    return PredictResponse(
+    response = PredictResponse(
         label=label,
         score=score,
         verdict=verdict,
@@ -1400,3 +1640,34 @@ def predict(req: PredictRequest):
         llm_explanation=llm_explanation,
         meta=meta,
     )
+
+    if current_user is not None:
+        try:
+            enabled_modules = {
+                "ml": req.use_ml,
+                "factcheck": req.use_factcheck,
+                "news": req.use_news,
+                "llm": req.use_llm,
+            }
+
+            try:
+                response_dict = response.model_dump()
+            except Exception:
+                response_dict = response.dict()
+
+            history_item = CheckHistoryDB(
+                user_id=current_user.id,
+                text=text,
+                verdict=verdict,
+                truth_score=float(truth_score),
+                enabled_modules=json.dumps(enabled_modules, ensure_ascii=False),
+                response_json=json.dumps(response_dict, ensure_ascii=False),
+            )
+
+            db.add(history_item)
+            db.commit()
+
+        except Exception as e:
+            print("History save error:", str(e))
+
+    return response
