@@ -35,3 +35,28 @@ data class SignalItem(
     val weight: Double,
     val detail: String? = null
 )
+
+data class AuthRequest(
+    val email: String,
+    val password: String
+)
+
+data class AuthResponse(
+    val access_token: String,
+    val token_type: String,
+    val email: String
+)
+
+data class UserResponse(
+    val id: Int,
+    val email: String
+)
+
+data class HistoryItemResponse(
+    val id: Int,
+    val text_preview: String,
+    val verdict: String,
+    val truth_score: Double,
+    val enabled_modules: String? = null,
+    val created_at: String
+)
